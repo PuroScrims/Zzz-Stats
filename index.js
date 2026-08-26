@@ -3,13 +3,11 @@ const axios = require('axios');
 const express = require('express');
 require('dotenv').config();
 
-// --- Web Server (to keep bot alive on Render) ---
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Bot is alive!'));
 app.listen(PORT, () => console.log(`Web server running on port ${PORT}`));
 
-// --- Discord Bot ---
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const API_BASE = 'https://prod.api-fortnite.com/api/v1';
 
@@ -39,22 +37,18 @@ client.on('interactionCreate', async (interaction) => {
         await interaction.deferReply();
         const username = interaction.options.getString('username');
         try {
-            // Search player
             const search = await axios.get(`${API_BASE}/events/powerrankings/search`, {
                 headers: { 'x-api-key': process.env.FORTNITE_API_KEY },
                 params: { q: username }
             });
             const player = search.data.data?.[0];
             if (!player) return interaction.editReply('Player not found.');
-
             const accountId = player.accountId;
             const archive = await axios.get(`${API_BASE}/events/powerrankings/archive/${accountId}`, {
                 headers: { 'x-api-key': process.env.FORTNITE_API_KEY }
             });
-
             const sessions = archive.data.data || [];
             if (sessions.length === 0) return interaction.editReply('No tournaments found.');
-
             const select = new StringSelectMenuBuilder()
                 .setCustomId('select_tournament')
                 .setPlaceholder('Select a tournament...')
@@ -63,21 +57,17 @@ client.on('interactionCreate', async (interaction) => {
                     description: s.date || 'Recent',
                     value: s.eventId || s.tournamentId
                 })));
-
             await interaction.editReply({
                 content: `🎮 Tournaments for **${username}**:`,
                 components: [new ActionRowBuilder().addComponents(select)]
             });
-
         } catch (e) {
             interaction.editReply(`❌ Error: ${e.message}`);
         }
     }
-
     if (interaction.isStringSelectMenu() && interaction.customId === 'select_tournament') {
         await interaction.deferUpdate();
         const eventId = interaction.values[0];
-        // For demo, send a placeholder embed. In reality, you'd call the tournament detail endpoint.
         const embed = new EmbedBuilder()
             .setTitle('🏆 Tournament Stats')
             .setDescription('Data from 9 out of 9 matches.\nBy Osirion and Kinch Analytics 💚')
