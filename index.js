@@ -36,48 +36,73 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.commandName === 'stats') {
         await interaction.deferReply();
         const username = interaction.options.getString('username');
+
         try {
-            const search = await axios.get(`${API_BASE}/events/powerrankings/search`, {
-                headers: { 'x-api-key': process.env.FORTNITE_API_KEY },
-                params: { q: username }
-            });
-            const player = search.data.data?.[0];
-            if (!player) return interaction.editReply('Player not found.');
-            const accountId = player.accountId;
-            const archive = await axios.get(`${API_BASE}/events/powerrankings/archive/${accountId}`, {
+            // PASO 1: Buscar el Account ID por nombre de usuario (Endpoint GRATUITO)
+            const accountRes = await axios.get(`${API_BASE}/account/displayName/${encodeURIComponent(username)}`, {
                 headers: { 'x-api-key': process.env.FORTNITE_API_KEY }
             });
-            const sessions = archive.data.data || [];
-            if (sessions.length === 0) return interaction.editReply('No tournaments found.');
+
+            const accountId = accountRes.data.data?.id;
+            if (!accountId) return interaction.editReply('❌ Jugador no encontrado.');
+
+            // PASO 2: Obtener historial de torneos (Endpoint GRATUITO - v2)
+            const historyRes = await axios.get(`${API_BASE}/../api/v2/events/players/${accountId}/history`, {
+                headers: { 'x-api-key': process.env.FORTNITE_API_KEY }
+            });
+
+            const tournaments = historyRes.data.data || [];
+            if (tournaments.length === 0) {
+                return interaction.editReply(`❌ ${username} no tiene torneos recientes.`);
+            }
+
+            // Crear menu desplegable con los torneos
             const select = new StringSelectMenuBuilder()
                 .setCustomId('select_tournament')
-                .setPlaceholder('Select a tournament...')
-                .addOptions(sessions.slice(0, 10).map(s => ({
-                    label: s.eventName || 'Tournament',
-                    description: s.date || 'Recent',
-                    value: s.eventId || s.tournamentId
+                .setPlaceholder('Selecciona un torneo...')
+                .addOptions(tournaments.slice(0, 10).map(t => ({
+                    label: t.eventName || t.tournamentName || 'Torneo',
+                    description: t.eventId || 'ID: ' + t.id,
+                    value: t.eventId || t.id
                 })));
+
             await interaction.editReply({
-                content: `🎮 Tournaments for **${username}**:`,
+                content: `🎮 **${tournaments.length} torneos encontrados para ${username}**:`,
                 components: [new ActionRowBuilder().addComponents(select)]
             });
-        } catch (e) {
-            interaction.editReply(`❌ Error: ${e.message}`);
+
+        } catch (error) {
+            console.error(error);
+            if (error.response?.status === 403) {
+                await interaction.editReply('❌ Error 403: Este endpoint requiere plan Pro. Usando endpoints gratuitos...');
+            } else {
+                await interaction.editReply(`❌ Error: ${error.message}`);
+            }
         }
     }
+
+    // Manejar la selección del dropdown
     if (interaction.isStringSelectMenu() && interaction.customId === 'select_tournament') {
         await interaction.deferUpdate();
         const eventId = interaction.values[0];
+
+        // Mostrar stats de ejemplo (el plan free no da stats detalladas por torneo)
         const embed = new EmbedBuilder()
-            .setTitle('🏆 Tournament Stats')
-            .setDescription('Data from 9 out of 9 matches.\nBy Osirion and Kinch Analytics 💚')
-            .setColor(0x00FF00)
+            .setTitle('🏆 Estadísticas del Torneo')
+            .setDescription('📌 **Nota:** Las estadísticas detalladas (eliminaciones, daño, construcciones) requieren el plan Pro.\n\n' +
+                           'Actualmente estás en el plan **Free**.\n' +
+                           'Puedes ver estadísticas básicas en: https://fortnitetracker.com')
+            .setColor(0xFFA500)
             .addFields(
-                { name: '🏆 Rank', value: '# 1072', inline: true },
-                { name: '🔥 Elims', value: '7', inline: true },
-                { name: '📊 Avg Placement', value: '29.8', inline: true }
+                { name: '📋 Evento ID', value: eventId || 'No disponible', inline: false },
+                { name: '💡 ¿Quieres más detalles?', value: 'Actualiza a Pro en api-fortnite.com/pricing', inline: false }
             );
-        await interaction.editReply({ content: `Stats for session: ${eventId}`, embeds: [embed], components: [] });
+
+        await interaction.editReply({
+            content: `📊 Has seleccionado el torneo: **${eventId}**`,
+            embeds: [embed],
+            components: []
+        });
     }
 });
 
